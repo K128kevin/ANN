@@ -1,11 +1,15 @@
 """A CLI for neural network training.
 
+Available training sets:
+and, or, xor
+
 Usage:
-    ann
+    ann <training_set> [-e EPOCHS]
+    ann (-h | --help)
 
 Options:
-    -h --help        Show this screen.
-    --version        Show version.
+    -e EPOCHS   Number of epochs. [default: 50].
+    -h --help   Show this screen.
 """
 
 from docopt import docopt
@@ -15,6 +19,8 @@ from namedlist import namedlist
 import itertools
 import random
 import math
+
+import training
 
 def sigmoid(x):
 	return 1 / (1 + math.exp(-x))
@@ -91,17 +97,21 @@ class Perceptron:
 		return tuple(node.value for node in self.net[-1])
 
 def main(args):
-	p = Perceptron(layer_sizes=(2, 2))
-	for i in range(500):
-		a = p.train([1, 1], [0, 0])
-		b = p.train([0, 1], [1, 1])
-		a = p.train([1, 0], [0, 0])
-		b = p.train([0, 0], [1, 1])
-		if i % 50 == 0:
-			print(a)
-			print(b)
-			print(p)
+	training_set = training.dispatch(args['<training_set>'])
+	epochs = int(args['-e'])
+
+	p = Perceptron(layer_sizes=(2, 2, 1))
+	for i in range(epochs):
+		for inputs, outputs in training_set():
+			p.train(inputs, outputs)
+
+	print('(inputs, outputs, predicted) after {} epochs:'.format(epochs))
+	for inputs, outputs in training_set():
+		print(inputs, outputs, p.run(inputs))
+
+	print('\nNetwork weights:')
+	print(p)
 
 if __name__ == "__main__":
-    args = docopt(__doc__)
-    main(args)
+	args = docopt(__doc__)
+	main(args)
