@@ -18,8 +18,7 @@ def xor_sample():
 XOR_WEIGHTS = (2, 2, 1), """1 -1
 		-1 1
 
-		1
-		1
+		1 1
 		"""
 
 def and_sample():

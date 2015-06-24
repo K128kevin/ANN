@@ -22,10 +22,11 @@ Options:
 from docopt import docopt
 
 from collections import namedtuple
-from namedlist import namedlist
 import itertools
 import random
 import math
+from io import StringIO
+import numpy as np
 
 import training
 
@@ -38,80 +39,33 @@ def sigmoid(x):
 def d_sigmoid(x):
 	return sigmoid(x) * (1 - sigmoid(x))
 
-class Node(namedlist('node', ['parent_edges', 'value', 'child_edges'])):
-	__slots__ = ()
-	def __repr__(self):
-		return str(self.value)
-
-class Edge(namedlist('edge', ['parent', 'weight', 'child'])):
-	__slots__ = ()
-	def __repr__(self):
-		return str(self.child)
-
-class Perceptron:
-	def __init__(self, learning_rate=.5, layer_sizes=(1, 1), weight_init=lambda: random.random() - .5, activation_fx=sigmoid):
-		counter = itertools.count()
-		# network = ((nodes), (nodes), (nodes))
-		network = tuple(
-			tuple(Node([], next(counter), []) for i in range(size)) # layer
-			for size in layer_sizes)
-		for parents, children in zip(network, network[1:]):
-			for parent, child in itertools.product(parents, children):
-				edge = Edge(parent, weight_init(), child)
-				parent.child_edges.append(edge)
-				child.parent_edges.append(edge)
-
-		self.net = network
-		self.learning_rate = learning_rate
-		self.activation_fx = activation_fx
-
-	def __str__(self):
-		return '\n\n'.join(
-			('\n'.join(
-				'\t'.join(str(edge.weight) for edge in node.child_edges)
-				for node in layer
-				))
-			for layer in self.net[:-1])
+class FeedForwardNet:
+	def __init__(self, layer_sizes=(1, 1), activation_function=sigmoid):
+		self.input_size = layer_sizes[0]
+		self.weights = [np.zeros([b, a]) for a, b in zip(layer_sizes[:-1], layer_sizes[1:])]
+		self.act_fn = np.vectorize(activation_function)
+		self.d_act = np.vectorize(d_sigmoid)
 
 	def loads(self, weights):
-		for layer, layer_weights in zip(self.net[:-1], weights.strip().split('\n\n')):
-			for node, node_weights in zip(layer, layer_weights.strip().split('\n')):
-				for edge, edge_weight in zip(node.child_edges, node_weights.strip().split()):
-					edge.weight = float(edge_weight)
+		self.weights = [np.loadtxt(StringIO(m), ndmin=2) for m in weights.split('\n\n')]
+		self.input_size = self.weights[0].shape[1]
 
-	def set_inputs(self, ins):
-		for node, value in zip(self.net[0], ins):
-			node.value = value
+	def run(self, inputs):
+		if len(inputs) != self.input_size:
+			raise Exception('Wrong input size')
+		inputs = np.array(inputs).reshape(len(inputs), 1)
+		computation = [inputs] + self.weights
+		self.layers = list(itertools.accumulate(computation, lambda A, B: self.act_fn(np.dot(B, A))))
+		return self.layers[-1].copy()
 
-	def activate_layers(self):
-		for layer in self.net[1:]:
-			for node in layer:
-				weighted_sum = sum(parent.value * weight for parent, weight, _ in node.parent_edges)
-				node.value = self.activation_fx(weighted_sum)
-
-	def train(self, ins, actual_outs):
-		expected_outs = self.run(ins)
-		errors = tuple(exp - act for exp, act in zip(expected_outs, actual_outs))
-		self.back_propagate(errors)
-		return actual_outs, expected_outs
-
-	def back_propagate(self, errors):
-		for layer, parent_nodes in zip(self.net[:0:-1], self.net[-2::-1]):
-			next_errors = (
-				sum(edge.weight * error
-					for edge in parent.child_edges)
-				for parent, error in zip(parent_nodes, errors))
-			for node, error in zip(layer, errors):
-				for edge in node.parent_edges:
-					parent, _, _ = edge
-					weight_delta = -self.learning_rate * error * d_sigmoid(node.value) * parent.value
-					edge.weight += weight_delta
-			errors = next_errors
-
-	def run(self, ins):
-		self.set_inputs(ins)
-		self.activate_layers()
-		return tuple(node.value for node in self.net[-1])
+	def train(self, inputs, outputs, l_rate=.05):
+		expected = self.run(inputs)
+		errs = expected - outputs
+		for ins, outs, weights in zip(self.layers[-2::-1], self.layers[:0:-1], reversed(self.weights)):
+			weight_delta = -l_rate * self.d_act(outs) * errs.dot(ins.reshape(1, len(ins)))
+			weights += weight_delta
+			errs = sum(weight_delta) / len(outs)
+			errs.resize(len(errs), 1)
 
 def main(args):
 	training_set = training.sample(args['<training_set>'])
@@ -120,27 +74,29 @@ def main(args):
 	activation = threshold if args['--threshold'] else sigmoid
 
 	if args['-w'] is not None:
-		layers, weights = training.weights(args['-w'])
+		layer_sizes, weights = training.weights(args['-w'])
 	else:
-		layers, weights = map(int, args['<layers>']), None
+		layer_sizes, weights = list(map(int, args['<layers>'])), None
 
-	p = Perceptron(layer_sizes=layers, activation_fx=activation, learning_rate=l_rate)
+	p = FeedForwardNet(layer_sizes=layer_sizes, activation_function=activation)
 	if weights is not None:
 		p.loads(weights)
 
-	print('Initial network weights:\n')
-	print(p)
+
+	print('Initial network weights:')
+	print(p.weights + '\n')
+
 
 	for i in range(epochs):
 		for inputs, outputs in training_set():
-			p.train(inputs, outputs)
-
+			p.train(inputs, outputs, l_rate=l_rate)
 	print('(inputs, outputs, predicted) after {} epochs:'.format(epochs))
 	for inputs, outputs in training_set():
 		print(inputs, outputs, p.run(inputs))
 
+
 	print('\nFinal network weights:')
-	print(p)
+	print(p.weights)
 
 if __name__ == "__main__":
 	args = docopt(__doc__)
