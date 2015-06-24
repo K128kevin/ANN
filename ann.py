@@ -84,8 +84,8 @@ def main(args):
 
 
 	print('Initial network weights:')
-	print(p.weights + '\n')
-
+	print(p.weights)
+	print()
 
 	for i in range(epochs):
 		for inputs, outputs in training_set():
@@ -94,8 +94,8 @@ def main(args):
 	for inputs, outputs in training_set():
 		print(inputs, outputs, p.run(inputs))
 
-
-	print('\nFinal network weights:')
+	print()
+	print('Final network weights:')
 	print(p.weights)
 
 if __name__ == "__main__":
