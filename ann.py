@@ -4,12 +4,15 @@ Available training sets:
 and, or, xor
 
 Usage:
-    ann <training_set> [-e EPOCHS]
+    ann <training_set> (<layers>... | -w WEIGHTS) [-e EPOCHS] [--sigmoid | --threshold]
     ann (-h | --help)
 
 Options:
-    -e EPOCHS   Number of epochs. [default: 50].
-    -h --help   Show this screen.
+    --sigmoid       Use a sigmoid activation function. [default]
+    --threshold     Use a threshold activation function.
+    -w WEIGHTS      Preload weights for a training set.
+    -e EPOCHS       Number of epochs. [default: 50]
+    -h --help       Show this screen.
 """
 
 from docopt import docopt
@@ -21,6 +24,9 @@ import random
 import math
 
 import training
+
+def threshold(x):
+	return 1 if x >= .5 else 0
 
 def sigmoid(x):
 	return 1 / (1 + math.exp(-x))
@@ -39,7 +45,7 @@ class Edge(namedlist('edge', ['parent', 'weight', 'child'])):
 		return str(self.child)
 
 class Perceptron:
-	def __init__(self, learning_rate=.5, layer_sizes=(1, 1), weight_init=lambda: random.random() - .5):
+	def __init__(self, learning_rate=.5, layer_sizes=(1, 1), weight_init=lambda: random.random() - .5, activation_fx=sigmoid):
 		counter = itertools.count()
 		# network = ((nodes), (nodes), (nodes))
 		network = tuple(
@@ -53,6 +59,7 @@ class Perceptron:
 
 		self.net = network
 		self.learning_rate = learning_rate
+		self.activation_fx = activation_fx
 
 	def __str__(self):
 		return '\n\n'.join(
@@ -62,6 +69,12 @@ class Perceptron:
 				))
 			for layer in self.net[:-1])
 
+	def loads(self, weights):
+		for layer, layer_weights in zip(self.net[:-1], weights.strip().split('\n\n')):
+			for node, node_weights in zip(layer, layer_weights.strip().split('\n')):
+				for edge, edge_weight in zip(node.child_edges, node_weights.strip().split()):
+					edge.weight = float(edge_weight)
+
 	def set_inputs(self, ins):
 		for node, value in zip(self.net[0], ins):
 			node.value = value
@@ -70,7 +83,7 @@ class Perceptron:
 		for layer in self.net[1:]:
 			for node in layer:
 				weighted_sum = sum(parent.value * weight for parent, weight, _ in node.parent_edges)
-				node.value = sigmoid(weighted_sum)
+				node.value = self.activation_fx(weighted_sum)
 
 	def train(self, ins, actual_outs):
 		expected_outs = self.run(ins)
@@ -97,10 +110,19 @@ class Perceptron:
 		return tuple(node.value for node in self.net[-1])
 
 def main(args):
-	training_set = training.dispatch(args['<training_set>'])
+	training_set = training.sample(args['<training_set>'])
 	epochs = int(args['-e'])
+	activation = threshold if args['--threshold'] else sigmoid
 
-	p = Perceptron(layer_sizes=(2, 2, 1))
+	if args['-w'] is not None:
+		layers, weights = training.weights(args['-w'])
+	else:
+		layers, weights = map(int, args['<layers>']), None
+
+	p = Perceptron(layer_sizes=layers, activation_fx=activation)
+	if weights is not None:
+		p.loads(weights)
+
 	for i in range(epochs):
 		for inputs, outputs in training_set():
 			p.train(inputs, outputs)
