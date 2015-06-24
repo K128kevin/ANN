@@ -3,14 +3,18 @@
 Available training sets:
 and, or, xor
 
+Example:
+	ann or 2 1 --threshold -e 100
+
 Usage:
-    ann <training_set> (<layers>... | -w WEIGHTS) [-e EPOCHS] [--sigmoid | --threshold]
+    ann <training_set> (<layers>... | -w WEIGHTS) [-l L_RATE] [-e EPOCHS] [--sigmoid | --threshold]
     ann (-h | --help)
 
 Options:
     --sigmoid       Use a sigmoid activation function. [default]
     --threshold     Use a threshold activation function.
     -w WEIGHTS      Preload weights for a training set.
+    -l L_RATE       Learning rate. [default: .05]
     -e EPOCHS       Number of epochs. [default: 50]
     -h --help       Show this screen.
 """
@@ -26,13 +30,13 @@ import math
 import training
 
 def threshold(x):
-	return 1 if x >= .5 else 0
+	return 1 if x > .5 else 0
 
 def sigmoid(x):
 	return 1 / (1 + math.exp(-x))
 
 def d_sigmoid(x):
-	return x * (1 - x)
+	return sigmoid(x) * (1 - sigmoid(x))
 
 class Node(namedlist('node', ['parent_edges', 'value', 'child_edges'])):
 	__slots__ = ()
@@ -92,7 +96,7 @@ class Perceptron:
 		return actual_outs, expected_outs
 
 	def back_propagate(self, errors):
-		for layer, parent_nodes in zip(self.net[:0:-1], self.net[-1::-1]):
+		for layer, parent_nodes in zip(self.net[:0:-1], self.net[-2::-1]):
 			next_errors = (
 				sum(edge.weight * error
 					for edge in parent.child_edges)
@@ -100,7 +104,7 @@ class Perceptron:
 			for node, error in zip(layer, errors):
 				for edge in node.parent_edges:
 					parent, _, _ = edge
-					weight_delta = self.learning_rate * error * d_sigmoid(node.value) * parent.value
+					weight_delta = -self.learning_rate * error * d_sigmoid(node.value) * parent.value
 					edge.weight += weight_delta
 			errors = next_errors
 
@@ -111,6 +115,7 @@ class Perceptron:
 
 def main(args):
 	training_set = training.sample(args['<training_set>'])
+	l_rate = float(args['-l'])
 	epochs = int(args['-e'])
 	activation = threshold if args['--threshold'] else sigmoid
 
@@ -119,9 +124,12 @@ def main(args):
 	else:
 		layers, weights = map(int, args['<layers>']), None
 
-	p = Perceptron(layer_sizes=layers, activation_fx=activation)
+	p = Perceptron(layer_sizes=layers, activation_fx=activation, learning_rate=l_rate)
 	if weights is not None:
 		p.loads(weights)
+
+	print('Initial network weights:\n')
+	print(p)
 
 	for i in range(epochs):
 		for inputs, outputs in training_set():
@@ -131,7 +139,7 @@ def main(args):
 	for inputs, outputs in training_set():
 		print(inputs, outputs, p.run(inputs))
 
-	print('\nNetwork weights:')
+	print('\nFinal network weights:')
 	print(p)
 
 if __name__ == "__main__":
